@@ -1,0 +1,155 @@
+<html>
+	<head>
+		<title>Home</title>
+		<link rel="stylesheet" type="text/css" href="style.css"/>
+	</head>
+	<body>
+		<div id="container">
+			<div id="header">
+				<h1 id="title_header">Monithor</h1>
+			</div>
+			<div id="content">
+				<!-- <p>Home page content goes here.</p> -->
+        <div id="actions">
+          <button onclick="clearSessions()">Clear</button>
+        </div>
+        <table id="sessions-table">
+          <thead>
+            <tr>
+              <td>ID</td>
+              <td>Requester</td>
+              <td>Time</td>
+              <td>Endpoint</td>
+            </tr>
+          </thead>
+          <tbody id="sessions-table-body">
+          </tbody>
+        </table>
+
+        <div id="session-details">
+          <h2>Session Details</h2>
+          <div id="session_id">
+            <span><h3>Session ID:</h3><div id="session_id_field"></div></span>
+          </div>
+
+          <div id="uri">
+            <span><h3>URI:</h3><div id="uri_field"></div></span>
+          </div>
+
+
+          <div id="session_datetime">
+            <span><h3>Datetime:</h3><div id="session_datetime_field"></div></span>
+          </div>
+
+          <div id="queries_details">
+            <span><h3>Queries:</h3></span>
+            <div id="queries"></div>
+          </div>
+
+			</div>
+			<div id="footer">
+				<!-- <p>Footer content goes here.</p> -->
+			</div>
+		</div>
+	</body>
+</html>
+
+
+<script>
+
+
+  function selectSession(row) {
+    let id = row.cells[0].innerHTML;
+
+
+    let r = new XMLHttpRequest();
+    r.open("GET", `/api/sessions/${id}?replace_bindings=true`, true);
+
+    r.onreadystatechange = function () {
+      if (r.readyState != 4 || r.status != 200) return;
+
+      let queries = document.getElementById('queries');
+      queries.innerHTML = '';
+      let query = document.createElement('div');
+
+      response = JSON.parse(r.responseText);
+
+
+      let session_id_field = document.getElementById('session_id_field');
+      session_id_field.innerHTML = response.session_id;
+
+      let uri_field = document.getElementById('uri_field');
+      uri_field.innerHTML = response.uri;
+
+      let session_datetime_field = document.getElementById('session_datetime_field');
+      session_datetime_field.innerHTML = response.datetime;
+
+      for (q in response.queries) {
+        let query = document.createElement('div');
+        query.className = 'querybox';
+
+        let sql = document.createElement('div');
+        sql.className = 'sql';
+        sql.innerHTML = response.queries[q].sql;
+
+        let execution_time = document.createElement('div');
+        execution_time.className = 'execution_time';
+        execution_time.innerHTML = "<b>Execution time:</b> " + response.queries[q].execution_time;
+
+        // query.innerHTML = response.queries[q].sql;
+
+        query.appendChild(sql);
+        query.appendChild(execution_time);
+
+        queries.appendChild(query);
+      }
+
+      // query.innerHTML = JSON.parse(r.responseText).query;
+
+      // queries.appendChild(query);
+      console.log(JSON.parse(r.responseText));
+    }
+    r.send();
+  }
+
+  function clearSessions(evt) {
+    let r = new XMLHttpRequest();
+    r.open("DELETE", "/api/sessions", true);
+    r.onreadystatechange = function () {
+      if (r.readyState != 4 || r.status != 200) return;
+
+      let table = document.getElementById('sessions-table');
+      table.innerHTML = '';
+      let header = table.createTHead();
+      let row = header.insertRow(0);
+      row.insertCell(0).innerHTML = 'ID';
+      row.insertCell(1).innerHTML = 'Requester';
+      row.insertCell(2).innerHTML = 'Time';
+      row.insertCell(3).innerHTML = 'Endpoint';
+    };
+    r.send();
+  }
+
+  var r = new XMLHttpRequest();
+  r.open("GET", "/api/sessions", true);
+  r.onreadystatechange = function () {
+    if (r.readyState != 4 || r.status != 200) return;
+    // alert("Success: " + r.responseText);
+
+    let table = document.getElementById('sessions-table-body');
+    
+    let data = JSON.parse(r.responseText);
+
+    for (d in data) {
+      console.log(data[d]);
+      let row = table.insertRow(-1);
+      row.insertCell(0).innerHTML = data[d].session_id;
+      row.insertCell(1).innerHTML = data[d].requester_id;
+      row.insertCell(2).innerHTML = data[d].datetime;
+      row.insertCell(3).innerHTML = data[d].uri;
+
+      row.onclick = function() { selectSession(row); };
+    }
+  };
+  r.send();
+</script>
