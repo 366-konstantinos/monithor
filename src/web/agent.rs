@@ -2,12 +2,11 @@ use std::str::FromStr;
 
 use actix_web::rt::net::{TcpStream, TcpListener};
 use log::{info, debug};
-use serde_json::{Result, Value, json};
-use unescape::unescape;
+use serde_json::Value;
 
-use base64::{Engine as _, alphabet, engine::{self, general_purpose}};
+use base64::{Engine as _, engine::general_purpose};
 
-use crate::{connection::Connection, reader};
+use crate::reader;
 
 use polodb_core::{Database, bson::doc};
 
