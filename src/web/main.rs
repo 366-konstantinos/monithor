@@ -1,11 +1,10 @@
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder, post, delete};
 use actix_web_static_files::ResourceFiles;
-use log::info;
+use env_logger::Env;
+use log::{info, debug};
 use actix_web::rt::spawn;
 use polodb_core::{Database, bson::doc};
 use serde_derive::Deserialize;
-
-
 
 use std::sync::Arc;
 use crate::agent::{SessionLog, Query as AgentQuery};
@@ -29,16 +28,6 @@ struct Modifier {
     replace_bindings: Option<bool>,
 }
 
-#[get("/{name}")]
-async fn hello(name: web::Path<String>) -> impl Responder {
-    format!("Hello {}!", &name)
-}
-
-#[get("/api/{name}")]
-async fn hello2(name: web::Path<String>) -> impl Responder {
-    format!("Hello {}!", &name)
-}
-
 
 #[get("/sessions")]
 async fn get_sessions(data: web::Data<AppState>) -> impl Responder {
@@ -47,8 +36,9 @@ async fn get_sessions(data: web::Data<AppState>) -> impl Responder {
     for col in collection {
         v.push(col.unwrap());
     }
+    v.reverse();
 
-    info!("get_sessions: {:?}", v);
+    debug!("get_sessions: {:?}", v);
 
 
     HttpResponse::Ok().json(v)
@@ -58,7 +48,7 @@ async fn get_sessions(data: web::Data<AppState>) -> impl Responder {
 #[delete("/sessions")]
 async fn clear_sessions(data: web::Data<AppState>) -> impl Responder {
     let collection = data.db.collection::<SessionLog>("session_logs").drop().unwrap();
-    info!("clear_sessions: {:?}", collection);
+    debug!("clear_sessions: {:?}", collection);
     HttpResponse::Ok().body("OK")
 }
 
@@ -66,7 +56,7 @@ async fn clear_sessions(data: web::Data<AppState>) -> impl Responder {
 #[get("/sessions/{uuid}")]
 async fn get_session_by_uuid(data: web::Data<AppState>, path: web::Path<String>, modifier: web::Query<Modifier>) -> impl Responder {
     let session_uuid = path.into_inner();
-    let session_log: Option<SessionLog> = data.db.collection::<SessionLog>("session_logs").find_one(doc! {"session_id": session_uuid }).unwrap();
+    let session_log: Option<SessionLog> = data.db.collection::<SessionLog>("session_logs").find_one(doc! {"request_id": session_uuid }).unwrap();
 
     let session_log_response = if modifier.replace_bindings.unwrap_or(false) {
         let session_log_modified: SessionLog = session_log.clone().unwrap();
@@ -79,7 +69,7 @@ async fn get_session_by_uuid(data: web::Data<AppState>, path: web::Path<String>,
         }
         let new_session_log = session_log.clone().unwrap().set_queries(new_queries.clone());
 
-        info!("session_log_modified: {:?}", new_queries.clone());
+        debug!("session_log_modified: {:?}", new_queries.clone());
         Some(new_session_log)
     } else {
         session_log.clone()
@@ -91,21 +81,23 @@ async fn get_session_by_uuid(data: web::Data<AppState>, path: web::Path<String>,
 
 #[post("/log")]
 async fn log_session() -> impl Responder {
-    info!("test post");
+    debug!("test post");
     HttpResponse::Ok().body("test")
 }
 
-fn scoped_config(cfg: &mut web::ServiceConfig) {
+fn session_config(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::resource("/test")
             .route(web::get().to(|| async { 
-                info!("test");
                 HttpResponse::Ok().body("test") 
             }))
             .route(web::head().to(HttpResponse::MethodNotAllowed)),
     );
 
-    cfg.service(log_session).service(get_sessions).service(get_session_by_uuid).service(clear_sessions);
+    cfg.service(log_session)
+        .service(clear_sessions)
+        .service(get_sessions)
+        .service(get_session_by_uuid);
 }
 
 #[actix_web::main]
@@ -119,20 +111,24 @@ async fn main() -> std::io::Result<()> {
     let port = 8899;
     let socket = std::net::SocketAddr::new(ip, port);
 
-
+    // spawn monithor agent. listening for logs at 7878
     spawn(async move {
         agent::connection(&db).await;
     });
-    env_logger::init();
+
+    // env logger
+    let env = Env::default()
+        .filter_or("MONITHOR_LOG", "info")
+        .write_style_or("MONITHOR_LOG_STYLE", "always");
+    env_logger::init_from_env(env);
+
     info!("Starting server on {}", socket);
 
     HttpServer::new(move || {
         let generated = generate();
         App::new()
             .app_data(web::Data::clone(&app_state))
-            .service(web::scope("/api").configure(scoped_config))
-            // .route("/{filename:.*}", web::get().to(index))
-            // .service(Files::new("/", "./static/root/").index_file("index.html"))
+            .service(web::scope("/api").configure(session_config))
             .service(ResourceFiles::new("/", generated))
             .wrap(actix_web::middleware::Logger::default())
     })

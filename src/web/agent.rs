@@ -23,8 +23,9 @@ pub struct Query {
 pub struct SessionLog {
     uri: String,
     queries: Vec<Query>,
-    session_id: String,
-    requester_id: String,
+    request_id: String,
+    execution_time: f32,
+    trace_id: String,
     datetime: String
 }
 
@@ -54,6 +55,10 @@ impl SessionLog {
         self.queries = new_queries;
         self.clone()
     }
+
+    pub fn query_execution_time(&self) -> f32 {
+        self.queries.iter().fold(0.0, |acc, v| acc + v.execution_time)
+    }
 }
 
 pub async fn connection(db: &Database) {
@@ -80,22 +85,22 @@ pub async fn process(socket: TcpStream, db: &Database) {
     let mut queries: Vec<Query> = vec![];
 
     let mut uri = String::new();
-    let mut requester_id = String::new();
+    let mut trace_id = String::new();
 
     debug!("{}", serde_json::to_string_pretty(data.as_object().unwrap()).unwrap());
 
     let datetime = String::from(data["datetime"].as_str().unwrap());
-    let mut session_id = String::from("None");
+    let mut request_id = String::from("None");
 
     data["context"].as_object().unwrap().iter().for_each(|(k, v)| {
         match k.as_str() {
-            "session_id" => {
-                session_id = String::from(v.as_str().unwrap());
-                info!("session_id: {}", v);
+            "request_id" => {
+                request_id = String::from(v.as_str().unwrap());
+                info!("request_id: {}", v);
             },
-            "requester_id" => {
-                requester_id = String::from(v.as_str().unwrap());
-                info!("requester_id: {}", v);
+            "trace_id" => {
+                trace_id = String::from(v.as_str().unwrap());
+                info!("trace_id: {}", v);
             },
             "uri" => {
                 uri = String::from(v.as_str().unwrap());
@@ -128,13 +133,15 @@ pub async fn process(socket: TcpStream, db: &Database) {
         }
     });
 
+    let execution_time = queries.iter().fold(0.0, |acc, v| acc + v.execution_time);
 
     let session_log = SessionLog {
         uri,
         queries,
-        session_id,
-        requester_id,
-        datetime
+        request_id,
+        trace_id,
+        datetime,
+        execution_time 
     };
 
     let collection = db.collection("session_logs");
